@@ -1,8 +1,8 @@
 // =======================================================
-// SCRIPT SAVER V30 (AUTO-FILL DATA & TAG MANAGER)
+// SCRIPT SAVER V31 (FIX UNSAVED CONTACT NAME)
 // =======================================================
 
-(function() {
+(function () {
     // 1. CEK DUPLIKASI
     if (document.getElementById("wa-saver-panel")) return;
 
@@ -89,7 +89,7 @@
                 let chk = document.createElement("input");
                 chk.type = "checkbox";
                 chk.className = "wa-saver-chk";
-                msg.parentElement.style.display = "flex"; 
+                msg.parentElement.style.display = "flex";
                 msg.parentElement.style.flexDirection = "row";
                 msg.parentElement.insertBefore(chk, msg);
             }
@@ -114,40 +114,68 @@
         return text.replace(/[\r\n]+/g, " ").trim();
     }
 
-    // --- 6. LOGIC SCRAPING ---
+    // --- 6. LOGIC SCRAPING (UPDATED FOR UNSAVED CONTACTS) ---
     function preSaveCheck() {
         let nomor = "Unknown";
+        // Selector sidebar diperluas agar lebih akurat
         let sidebar = document.querySelector("section") || document.querySelector("div._aou8") || document.querySelector("div[data-testid='contact-info-drawer']");
-        
+
         if (sidebar) {
             let lines = sidebar.innerText.split('\n');
             for (let line of lines) {
                 let clean = line.replace(/[\s\-\+]/g, '');
                 if (!isNaN(clean) && clean.length > 9 && !line.includes(":")) {
                     if (!line.toLowerCase().includes("seen") && !line.toLowerCase().includes("last")) {
-                        nomor = line; 
+                        nomor = line;
                         break;
                     }
                 }
             }
         }
 
+        // --- [FIX: LOGIC NAMA LEBIH PINTAR] ---
         let nama = "Tanpa Nama";
+
+        // 1. Coba ambil dari Header Chat
         try {
             let headerTitle = document.querySelector("header span[dir='auto']");
-            if(headerTitle) nama = headerTitle.innerText;
-        } catch (e) {}
+            if (headerTitle) nama = headerTitle.innerText;
+        } catch (e) { }
+
+        // 2. Cek apakah nama yang terambil adalah Nomor HP? (Indikasi kontak tidak disave)
+        // Regex ini mengecek apakah isinya cuma angka, spasi, +, atau -
+        let isPhoneNumber = /^[\d\+\-\s]+$/.test(nama);
+
+        // 3. Jika nama invalid/nomor HP, cari Pushname di Sidebar (yang ada tanda ~)
+        if ((nama === "Tanpa Nama" || isPhoneNumber) && sidebar) {
+            try {
+                // Mencari semua span di sidebar
+                let spans = sidebar.querySelectorAll("span[dir='auto']");
+                for (let sp of spans) {
+                    let text = sp.innerText;
+                    // Tanda ~ adalah indikator nama user WA (Pushname)
+                    if (text && text.trim().startsWith("~")) {
+                        // Ambil namanya, buang tanda ~ di depan
+                        nama = text.trim().substring(1).trim();
+                        break;
+                    }
+                }
+            } catch (err) {
+                console.log("Gagal ambil pushname", err);
+            }
+        }
+        // --- [END FIX] ---
 
         let isiChat = "";
         let checkedBoxes = document.querySelectorAll(".wa-saver-chk:checked");
-        
+
         if (checkedBoxes.length > 0) {
             isiChat = Array.from(checkedBoxes).map(chk => {
-                let msgEl = chk.nextElementSibling; 
+                let msgEl = chk.nextElementSibling;
                 let info = msgEl ? (msgEl.getAttribute("data-pre-plain-text") || "") : "";
                 let text = getCleanText(msgEl);
-                return `${info} ${text}`; 
-            }).join("\n"); 
+                return `${info} ${text}`;
+            }).join("\n");
         } else {
             let messageElements = document.querySelectorAll("div[data-pre-plain-text]");
             isiChat = Array.from(messageElements).slice(-15).map(el => {
@@ -160,13 +188,13 @@
         if (nomor === "Unknown") return alert("⚠️ Buka Sidebar Info Kontak dahulu.");
         if (isiChat === "") return alert("⚠️ Tidak ada pesan terdeteksi.");
 
-        tempData = { nama: nama, nomor: "'" + nomor, link: `https://wa.me/${nomor.replace(/\D/g,'')}`, chat: isiChat };
+        tempData = { nama: nama, nomor: "'" + nomor, link: `https://wa.me/${nomor.replace(/\D/g, '')}`, chat: isiChat };
         showInputForm();
     }
 
     // --- 7. FORM INPUT WITH MEMORY RECALL ---
     function showInputForm() {
-        if(document.getElementById("saver-modal")) return;
+        if (document.getElementById("saver-modal")) return;
 
         const overlay = document.createElement("div");
         overlay.id = "saver-modal";
@@ -183,7 +211,7 @@
         // --- CEK MEMORY (AUTO-RECALL) ---
         const cacheKey = "ws_cache_" + tempData.nomor.replace(/\D/g, ''); // Kunci unik berdasarkan nomor
         const cachedData = JSON.parse(localStorage.getItem(cacheKey));
-        
+
         if (cachedData) {
             const noti = document.createElement("div");
             noti.className = "ws-noti-recall";
@@ -196,9 +224,9 @@
         body.appendChild(createField("📅 Hari/Tanggal", "input", { value: hariIni, readonly: true }));
 
         // 2. DOMISILI (Load from Cache)
-        body.appendChild(createField("🏠 Domisili", "input", { 
+        body.appendChild(createField("🏠 Domisili", "input", {
             placeholder: "Contoh: Jakarta Selatan...",
-            value: cachedData ? cachedData.domisili : "" 
+            value: cachedData ? cachedData.domisili : ""
         }));
 
         // 3. LAYANAN (Load from Cache)
@@ -218,7 +246,7 @@
         selStatus.id = "inp_status";
         selStatus.className = "ws-select";
         selStatus.innerHTML = `<option value="Valid">Valid</option><option value="Invalid">Invalid</option>`;
-        if(cachedData && cachedData.status) selStatus.value = cachedData.status;
+        if (cachedData && cachedData.status) selStatus.value = cachedData.status;
         statusDiv.appendChild(selStatus);
         body.appendChild(statusDiv);
 
@@ -226,7 +254,7 @@
 
         const footer = document.createElement("div");
         footer.className = "ws-footer";
-        
+
         const btnCancel = document.createElement("button");
         btnCancel.className = "ws-btn-action ws-btn-secondary";
         btnCancel.innerText = "Batal";
@@ -252,11 +280,11 @@
         div.innerHTML = `<label class="ws-label">${label}</label>`;
         const input = document.createElement("input");
         input.type = "text";
-        input.id = "inp_" + label.split(" ")[1].toLowerCase().replace("/",""); 
+        input.id = "inp_" + label.split(" ")[1].toLowerCase().replace("/", "");
         input.className = "ws-input";
-        if(opts.value) input.value = opts.value;
-        if(opts.readonly) input.readOnly = true;
-        if(opts.placeholder) input.placeholder = opts.placeholder;
+        if (opts.value) input.value = opts.value;
+        if (opts.readonly) input.readOnly = true;
+        if (opts.placeholder) input.placeholder = opts.placeholder;
         div.appendChild(input);
         return div;
     }
@@ -265,7 +293,7 @@
         const div = document.createElement("div");
         div.className = "ws-form-group";
         const idBase = label.split(" ")[1].toLowerCase();
-        
+
         div.innerHTML = `
             <label class="ws-label">
                 ${label}
@@ -280,10 +308,10 @@
         const managerView = document.createElement("div");
         managerView.className = "ws-manager-panel";
         managerView.style.display = "none";
-        
+
         const chipsContainer = document.createElement("div");
         chipsContainer.className = "ws-tags-container";
-        
+
         const addGroup = document.createElement("div");
         addGroup.className = "ws-add-group";
         const inputNew = document.createElement("input");
@@ -304,7 +332,7 @@
         managerView.appendChild(btnDone);
 
         let savedOpts = JSON.parse(localStorage.getItem(storageKey));
-        if(!savedOpts || savedOpts.length === 0) {
+        if (!savedOpts || savedOpts.length === 0) {
             savedOpts = defaults;
             localStorage.setItem(storageKey, JSON.stringify(savedOpts));
         }
@@ -317,10 +345,10 @@
                 op.value = opt;
                 op.innerText = opt;
                 selectView.appendChild(op);
-                if(opt === selectedValue) found = true;
+                if (opt === selectedValue) found = true;
             });
             // Jika ada nilai recall yang cocok, pilih itu
-            if(found) selectView.value = selectedValue;
+            if (found) selectView.value = selectedValue;
 
             chipsContainer.innerHTML = "";
             savedOpts.forEach(opt => {
@@ -328,7 +356,7 @@
                 chip.className = "ws-chip";
                 chip.innerHTML = `${opt} <span class="ws-chip-del" title="Hapus">×</span>`;
                 chip.querySelector(".ws-chip-del").onclick = () => {
-                    if(confirm(`Hapus opsi "${opt}"?`)) {
+                    if (confirm(`Hapus opsi "${opt}"?`)) {
                         savedOpts = savedOpts.filter(o => o !== opt);
                         saveAndRefresh();
                     }
@@ -345,7 +373,7 @@
         btnAdd.onclick = (e) => {
             e.preventDefault();
             const newVal = inputNew.value.trim();
-            if(newVal && !savedOpts.includes(newVal)) {
+            if (newVal && !savedOpts.includes(newVal)) {
                 savedOpts.push(newVal);
                 saveAndRefresh();
                 inputNew.value = "";
@@ -424,7 +452,7 @@
         chrome.runtime.sendMessage({ action: "kirim_data", payload: finalPayload }, (response) => {
             btn.innerHTML = originalText;
             btn.disabled = false;
-            
+
             if (response && response.status === "BERHASIL") {
                 alert("✅ Data Berhasil Disimpan & Detail diingat!");
                 overlay.remove();
